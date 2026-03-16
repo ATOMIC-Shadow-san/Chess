@@ -6,6 +6,8 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Tutorial } from '../game/tutorials';
 
+import { XiangqiRL } from '../game/rl';
+
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
@@ -16,6 +18,7 @@ interface XiangqiBoardProps {
   aiDifficulty?: 'easy' | 'medium' | 'hard' | 'hell';
   tutorial?: Tutorial;
   targetRoomId?: string;
+  customAI?: XiangqiRL | null;
   onGameEnd?: (winner: Color | 'draw') => void;
 }
 
@@ -24,7 +27,7 @@ const PIECE_TEXT = {
   black: { k: '將', a: '士', e: '象', h: '馬', r: '車', c: '砲', p: '卒' },
 };
 
-export default function XiangqiBoard({ mode, initialBoard, aiDifficulty = 'medium', tutorial, targetRoomId, onGameEnd }: XiangqiBoardProps) {
+export default function XiangqiBoard({ mode, initialBoard, aiDifficulty = 'medium', tutorial, targetRoomId, customAI, onGameEnd }: XiangqiBoardProps) {
   const [board, setBoard] = useState<BoardState>(initialBoard);
   const [turn, setTurn] = useState<Color>('red');
   const [selectedPos, setSelectedPos] = useState<Position | null>(null);
@@ -140,15 +143,22 @@ export default function XiangqiBoard({ mode, initialBoard, aiDifficulty = 'mediu
     // AI Turn
     if (mode === 'ai' && turn !== myColor && !isThinking) {
       setIsThinking(true);
-      setTimeout(() => {
-        let depth = 3;
-        if (aiDifficulty === 'easy') depth = 2;
-        if (aiDifficulty === 'hard') depth = 4;
-        if (aiDifficulty === 'hell') depth = 5;
-        
-        const bestMove = getBestMove(board, turn, depth);
-        if (bestMove) {
-          handleMove(bestMove.from, bestMove.to);
+      setTimeout(async () => {
+        if (customAI) {
+          const bestMove = await customAI.getBestMove(board, turn, 0); // epsilon 0 for pure exploitation
+          if (bestMove) {
+            handleMove(bestMove.from, bestMove.to);
+          }
+        } else {
+          let depth = 3;
+          if (aiDifficulty === 'easy') depth = 2;
+          if (aiDifficulty === 'hard') depth = 4;
+          if (aiDifficulty === 'hell') depth = 5;
+          
+          const bestMove = getBestMove(board, turn, depth);
+          if (bestMove) {
+            handleMove(bestMove.from, bestMove.to);
+          }
         }
         setIsThinking(false);
       }, 50); // Small delay to let React render the "Thinking..." state

@@ -13,7 +13,7 @@ async function startServer() {
     },
   });
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = parseInt(process.env.PORT || '3000', 10);
 
   // Socket.io logic
   const rooms = new Map<string, { red?: string, black?: string }>();

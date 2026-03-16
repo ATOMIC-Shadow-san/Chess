@@ -177,3 +177,49 @@ export function getBestMove(board: BoardState, color: Color, depth: number = 3):
 
   return bestMove;
 }
+
+// Dummy Bot (Level 0): Greedy capture, or random forward, or random move
+export function getDummyMove(board: BoardState, color: Color): { from: Position, to: Position } | null {
+  const moves: { from: Position, to: Position, isCapture: boolean, isForward: boolean }[] = [];
+  
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 9; c++) {
+      const piece = board[r][c];
+      if (piece && piece.color === color) {
+        const legalMoves = getLegalMoves(board, r, c);
+        for (const to of legalMoves) {
+          const targetPiece = board[to.r][to.c];
+          const isCapture = targetPiece !== null;
+          // Red moves up (smaller r), Black moves down (larger r)
+          const isForward = color === 'red' ? to.r < r : to.r > r;
+          moves.push({ from: { r, c }, to, isCapture, isForward });
+        }
+      }
+    }
+  }
+
+  if (moves.length === 0) return null;
+
+  // 1. Occasional Greedy Capture (only 20% chance to even try capturing greedily)
+  const captures = moves.filter(m => m.isCapture);
+  if (captures.length > 0 && Math.random() < 0.2) {
+    // Sort captures by value of the target piece (greedy)
+    captures.sort((a, b) => {
+      const targetA = board[a.to.r][a.to.c]!;
+      const targetB = board[b.to.r][b.to.c]!;
+      return PIECE_VALUES[targetB.type] - PIECE_VALUES[targetA.type];
+    });
+    // Pick the best capture, or randomly among the best if there are ties
+    // For simplicity, just pick the highest value capture
+    return captures[0];
+  }
+
+  // 2. Random Forward Move (50% chance if available)
+  const forwardMoves = moves.filter(m => m.isForward);
+  if (forwardMoves.length > 0 && Math.random() > 0.5) {
+    return forwardMoves[Math.floor(Math.random() * forwardMoves.length)];
+  }
+
+  // 3. Completely Random Move
+  return moves[Math.floor(Math.random() * moves.length)];
+}

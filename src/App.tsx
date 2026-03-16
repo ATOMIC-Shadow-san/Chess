@@ -7,8 +7,12 @@ import React, { useState } from 'react';
 import XiangqiBoard from './components/XiangqiBoard';
 import { INITIAL_BOARD } from './game/engine';
 import { TUTORIALS, Tutorial } from './game/tutorials';
+import TrainingArena from './components/TrainingArena';
+import ModelMatch from './components/ModelMatch';
+import ModelUploader from './components/ModelUploader';
+import { XiangqiRL } from './game/rl';
 
-type GameMode = 'menu' | 'local' | 'ai' | 'online' | 'tutorial';
+type GameMode = 'menu' | 'local' | 'ai' | 'online' | 'tutorial' | 'training' | 'model_match';
 type AIDifficulty = 'easy' | 'medium' | 'hard' | 'hell';
 
 export default function App() {
@@ -19,6 +23,7 @@ export default function App() {
   const [roomIdInput, setRoomIdInput] = useState('');
   const [activeRoomId, setActiveRoomId] = useState<string | undefined>(undefined);
   const [selectedTutorial, setSelectedTutorial] = useState<Tutorial | null>(null);
+  const [customAI, setCustomAI] = useState<XiangqiRL | null>(null);
 
   return (
     <div className={`min-h-[100dvh] bg-stone-100 flex flex-col items-center justify-center p-2 sm:p-4 ${mode !== 'menu' ? 'overflow-hidden' : ''}`}>
@@ -80,6 +85,11 @@ export default function App() {
                 /> 地獄
               </label>
             </div>
+            <div className="mt-2 border-t border-green-200 pt-2">
+              <div className="text-xs font-bold text-green-800 mb-1">或上傳自訂模型對戰：</div>
+              <ModelUploader label="自訂 AI 模型" onModelLoaded={setCustomAI} />
+              {customAI && <div className="text-xs text-green-700 mt-1">✅ 已載入自訂模型，將取代預設 AI</div>}
+            </div>
           </div>
 
           <button 
@@ -94,6 +104,20 @@ export default function App() {
             onClick={() => setShowTutorials(true)}
           >
             教學模式 (Tutorials)
+          </button>
+
+          <button 
+            className="px-6 py-3 bg-teal-600 text-white rounded-lg shadow hover:bg-teal-700 transition"
+            onClick={() => setMode('training')}
+          >
+            機器學習訓練 (ML Training)
+          </button>
+
+          <button 
+            className="px-6 py-3 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition"
+            onClick={() => setMode('model_match')}
+          >
+            模型對戰 (Model vs Model)
           </button>
         </div>
       )}
@@ -166,7 +190,7 @@ export default function App() {
         </div>
       )}
 
-      {mode !== 'menu' && (
+      {mode !== 'menu' && mode !== 'training' && mode !== 'model_match' && (
         <div className="flex flex-col items-center w-full h-full justify-center">
           <div 
             className="w-full flex justify-between items-center mb-2 px-2"
@@ -190,12 +214,41 @@ export default function App() {
             </div>
           </div>
           <XiangqiBoard 
-            mode={mode} 
+            mode={mode as any} 
             initialBoard={mode === 'tutorial' && selectedTutorial ? selectedTutorial.initialBoard : INITIAL_BOARD} 
             aiDifficulty={aiDifficulty} 
             tutorial={selectedTutorial || undefined}
             targetRoomId={activeRoomId}
+            customAI={customAI}
           />
+        </div>
+      )}
+
+      {mode === 'training' && (
+        <div className="w-full h-full overflow-y-auto">
+          <div className="p-4">
+            <button 
+              className="px-4 py-2 bg-stone-300 text-stone-800 text-sm rounded hover:bg-stone-400 transition mb-4"
+              onClick={() => setMode('menu')}
+            >
+              ← 返回主選單 (Back to Menu)
+            </button>
+            <TrainingArena />
+          </div>
+        </div>
+      )}
+
+      {mode === 'model_match' && (
+        <div className="w-full h-full overflow-y-auto">
+          <div className="p-4">
+            <button 
+              className="px-4 py-2 bg-stone-300 text-stone-800 text-sm rounded hover:bg-stone-400 transition mb-4"
+              onClick={() => setMode('menu')}
+            >
+              ← 返回主選單 (Back to Menu)
+            </button>
+            <ModelMatch />
+          </div>
         </div>
       )}
     </div>
