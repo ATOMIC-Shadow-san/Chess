@@ -191,6 +191,7 @@ export default function TrainingArena() {
   const consecutiveMaxStepsRef = useRef(0);
   const consecutiveRepetitionsRef = useRef(0);
   const level7HalfWinCountRef = useRef(0);
+  const consecutiveDesperationRef = useRef(0);
 
   useEffect(() => {
     agentRef.current = new XiangqiRL();
@@ -402,6 +403,7 @@ export default function TrainingArena() {
       }
 
       // Update recent results
+      const isExactly100th = resultsRef.current.length === 99;
       const newResults = [...resultsRef.current, result].slice(-100);
       resultsRef.current = newResults;
       setRecentResults(newResults);
@@ -420,6 +422,7 @@ export default function TrainingArena() {
           if (wins >= 55 && losses < 20) {
             level7HalfWinCountRef.current += 1;
             shouldResetResults = true;
+            consecutiveDesperationRef.current = 0;
             if (level7HalfWinCountRef.current >= 2) {
               shouldAdvance = true;
             } else {
@@ -429,6 +432,7 @@ export default function TrainingArena() {
         } else {
           if (wins >= 65 && losses < 20) {
             shouldAdvance = true;
+            consecutiveDesperationRef.current = 0;
           }
         }
         
@@ -447,8 +451,17 @@ export default function TrainingArena() {
             }
           }
         } else if (nonWins > 70 && !isEndgame) {
+          if (isExactly100th) {
+            consecutiveDesperationRef.current += 1;
+          } else {
+            consecutiveDesperationRef.current = 1;
+          }
+          
+          let newEpsilon = 0.3 + (consecutiveDesperationRef.current - 1) * 0.1;
+          newEpsilon = Math.min(newEpsilon, 0.7);
+          
           // Desperation restart for full games if stuck
-          currentEpsilon = Math.max(currentEpsilon, 0.4);
+          currentEpsilon = Math.max(currentEpsilon, newEpsilon);
           shouldResetResults = true;
           
           // Add extra penalty to replay buffer to discourage current policy
@@ -462,12 +475,17 @@ export default function TrainingArena() {
           }
           
           const prevStage = PREV_STAGE[stageRef.current];
+          const logEpsilon = newEpsilon.toFixed(1);
           if (prevStage && !prevStage.startsWith('Level')) {
             stageRef.current = prevStage;
             setStage(prevStage);
-            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟！探索率拉高至 0.4，給予 -1.0 懲罰並降級至 ${prevStage}！`);
+            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟！探索率拉高至 ${logEpsilon}，給予 -1.0 懲罰並降級至 ${prevStage}！`);
           } else {
-            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟重置！探索率拉高至 0.4，並給予 -1.0 懲罰`);
+            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟重置！探索率拉高至 ${logEpsilon}，並給予 -1.0 懲罰`);
+          }
+        } else {
+          if (isExactly100th) {
+            consecutiveDesperationRef.current = 0;
           }
         }
 
