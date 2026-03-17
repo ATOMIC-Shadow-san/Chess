@@ -196,7 +196,10 @@ export function calculateSpatialReward(boardBefore: BoardState, boardAfter: Boar
   const beta = 0.02;
   reward += (distBefore - distAfter) * beta;
 
-  if (stage === 'Level 1' || stage === 'Level 2') {
+  const subLevel = stage.includes(' ') ? parseInt(stage.split(' ')[1]) : 6;
+
+  // Encourage pushing king to edge in early stages (less pieces)
+  if (subLevel <= 2) {
     const enemyGeneralPosBefore = findPiece(boardBefore, enemyColor, 'k');
     if (enemyGeneralPosBefore) {
       const edgeDistBefore = Math.min(enemyGeneralPosBefore.r, enemyGeneralPosBefore.c, 8 - enemyGeneralPosBefore.c);
@@ -205,7 +208,8 @@ export function calculateSpatialReward(boardBefore: BoardState, boardAfter: Boar
     }
   }
 
-  if (stage === 'Level 3' || stage === 'Level 4' || stage === 'Level 7') {
+  // Encourage moving pawns forward if they exist
+  if (subLevel >= 3) {
     let pawnRSumBefore = 0;
     let pawnRSumAfter = 0;
     for (let r = 0; r < 10; r++) {
@@ -214,14 +218,8 @@ export function calculateSpatialReward(boardBefore: BoardState, boardAfter: Boar
         if (boardAfter[r][c]?.type === 'p' && boardAfter[r][c]?.color === aiColor) pawnRSumAfter += r;
       }
     }
+    // Red pawns move from r=6 towards r=0
     if (pawnRSumAfter < pawnRSumBefore) reward += 0.03;
-  }
-
-  if (stage === 'Level 6') {
-    const cannonPos = findPiece(boardAfter, aiColor, 'c');
-    if (cannonPos && (cannonPos.r === enemyGeneralPos.r || cannonPos.c === enemyGeneralPos.c)) {
-      reward += 0.02;
-    }
   }
 
   return reward;

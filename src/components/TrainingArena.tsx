@@ -1,42 +1,45 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BoardState, Color, INITIAL_BOARD, hasLegalMoves, isCheck, makeMove } from '../game/engine';
+import { BoardState, Color, INITIAL_BOARD, hasLegalMoves, isCheck, makeMove, PieceType } from '../game/engine';
 import { XiangqiRL, hashBoard, evaluateBoardScore, ReplayBuffer, calculateSpatialReward } from '../game/rl';
 import { getBestMove as getMinimaxMove, getDummyMove } from '../game/ai';
 import ReadOnlyBoard from './ReadOnlyBoard';
 
-type TrainingStage = 'Level 1' | 'Level 2' | 'Level 3' | 'Level 4' | 'Level 5' | 'Level 6' | 'Level 7' | 'Dummy' | 'Easy' | 'Medium' | 'Hard' | 'Hell' | 'Chess King';
+type Difficulty = 'Dummy' | 'Easy' | 'Medium' | 'Hard' | 'Hell';
+type SubLevel = 1 | 2 | 3 | 4 | 5 | 6;
+type LegacyStage = 'Level 1' | 'Level 2' | 'Level 3' | 'Level 4' | 'Level 5' | 'Level 6' | 'Level 7';
+type TrainingStage = LegacyStage | `${Difficulty} ${SubLevel}` | 'Chess King';
 
-const STAGE_DEPTHS: Record<TrainingStage, number> = {
-  'Level 1': 1,
-  'Level 2': 1,
-  'Level 3': 1,
-  'Level 4': 1,
-  'Level 5': 1,
-  'Level 6': 1,
-  'Level 7': 1,
-  'Dummy': 0,
-  'Easy': 1,
-  'Medium': 2,
-  'Hard': 3,
-  'Hell': 4,
-  'Chess King': 0
-};
+const LEGACY_STAGES: LegacyStage[] = ['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'Level 6', 'Level 7'];
+const DIFFICULTIES: Difficulty[] = ['Dummy', 'Easy', 'Medium', 'Hard', 'Hell'];
+const STAGES: TrainingStage[] = [...LEGACY_STAGES];
+for (const d of DIFFICULTIES) {
+  for (let i = 1; i <= 6; i++) {
+    STAGES.push(`${d} ${i}` as TrainingStage);
+  }
+}
+STAGES.push('Chess King');
 
-const NEXT_STAGE: Record<TrainingStage, TrainingStage | null> = {
-  'Level 1': 'Level 2',
-  'Level 2': 'Level 3',
-  'Level 3': 'Level 4',
-  'Level 4': 'Level 5',
-  'Level 5': 'Level 6',
-  'Level 6': 'Level 7',
-  'Level 7': 'Dummy',
-  'Dummy': 'Easy',
-  'Easy': 'Medium',
-  'Medium': 'Hard',
-  'Hard': 'Hell',
-  'Hell': 'Chess King',
-  'Chess King': null
-};
+const STAGE_DEPTHS: Record<TrainingStage, number> = STAGES.reduce((acc, stage) => {
+  if (stage === 'Chess King') {
+    acc[stage] = 0;
+  } else if (stage.startsWith('Level')) {
+    acc[stage] = 1;
+  } else {
+    const [diff] = stage.split(' ') as [Difficulty, string];
+    acc[stage] = diff === 'Dummy' ? 0 : (diff === 'Easy' ? 1 : (diff === 'Medium' ? 2 : (diff === 'Hard' ? 3 : 4)));
+  }
+  return acc;
+}, {} as Record<TrainingStage, number>);
+
+const NEXT_STAGE: Record<TrainingStage, TrainingStage | null> = STAGES.reduce((acc, stage, i) => {
+  acc[stage] = STAGES[i + 1] || null;
+  return acc;
+}, {} as Record<TrainingStage, TrainingStage | null>);
+
+const PREV_STAGE: Record<TrainingStage, TrainingStage | null> = STAGES.reduce((acc, stage, i) => {
+  acc[stage] = STAGES[i - 1] || null;
+  return acc;
+}, {} as Record<TrainingStage, TrainingStage | null>);
 
 const getStageMaxSteps = (stage: TrainingStage): number => {
   if (stage === 'Level 1') return 60;
@@ -46,17 +49,15 @@ const getStageMaxSteps = (stage: TrainingStage): number => {
   if (stage === 'Level 5') return 80;
   if (stage === 'Level 6') return 80;
   if (stage === 'Level 7') return 100;
-  return 200;
+  if (stage === 'Chess King') return 200;
+  const subLevel = parseInt(stage.split(' ')[1]);
+  return 100 + subLevel * 15;
 };
 
 const generateBoardForStage = (stage: TrainingStage): BoardState => {
-  if (['Dummy', 'Easy', 'Medium', 'Hard', 'Hell', 'Chess King'].includes(stage)) {
-    return JSON.parse(JSON.stringify(INITIAL_BOARD));
-  }
-
   const board = Array(10).fill(null).map(() => Array(9).fill(null)) as BoardState;
   
-  const placePiece = (color: Color, type: Piece['type'], minR: number, maxR: number, minC: number, maxC: number, condition?: (r: number, c: number) => boolean) => {
+  const placePiece = (color: Color, type: PieceType, minR: number, maxR: number, minC: number, maxC: number, condition?: (r: number, c: number) => boolean) => {
     let r, c;
     let attempts = 0;
     do {
@@ -68,50 +69,103 @@ const generateBoardForStage = (stage: TrainingStage): BoardState => {
     return { r, c };
   };
 
-  const bk = placePiece('black', 'k', 0, 2, 3, 5);
-  const rk = placePiece('red', 'k', 7, 9, 3, 5);
+  if (stage.startsWith('Level')) {
+    const bk = placePiece('black', 'k', 0, 2, 3, 5);
+    const rk = placePiece('red', 'k', 7, 9, 3, 5);
 
-  if (stage === 'Level 1') {
-    placePiece('red', 'r', 0, 6, 0, 8, (r, c) => Math.abs(r - bk.r) + Math.abs(c - bk.c) > 3);
-  } else if (stage === 'Level 2') {
-    placePiece('red', 'r', 0, 4, 0, 8);
-    placePiece('red', 'r', 5, 9, 0, 8, (r, c) => board[r][c] === null);
-  } else if (stage === 'Level 3') {
-    placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-    placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null && Math.abs(r - bk.r) + Math.abs(c - bk.c) > 2);
-  } else if (stage === 'Level 4') {
-    placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-    placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null && Math.abs(r - bk.r) + Math.abs(c - bk.c) > 2);
-    const advPos = [[0,3], [0,5], [1,4], [2,3], [2,5]];
-    const validAdv = advPos.filter(([r, c]) => board[r][c] === null);
-    if (validAdv.length > 0) {
-      const [ar, ac] = validAdv[Math.floor(Math.random() * validAdv.length)];
-      board[ar][ac] = { type: 'a', color: 'black' };
+    if (stage === 'Level 1') {
+      placePiece('red', 'r', 0, 6, 0, 8, (r, c) => Math.abs(r - bk.r) + Math.abs(c - bk.c) > 3);
+    } else if (stage === 'Level 2') {
+      placePiece('red', 'r', 0, 4, 0, 8);
+      placePiece('red', 'r', 5, 9, 0, 8, (r, c) => board[r][c] === null);
+    } else if (stage === 'Level 3') {
+      placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
+      placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null && Math.abs(r - bk.r) + Math.abs(c - bk.c) > 2);
+    } else if (stage === 'Level 4') {
+      placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
+      placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null && Math.abs(r - bk.r) + Math.abs(c - bk.c) > 2);
+      const advPos = [[0,3], [0,5], [1,4], [2,3], [2,5]];
+      const validAdv = advPos.filter(([r, c]) => board[r][c] === null);
+      if (validAdv.length > 0) {
+        const [ar, ac] = validAdv[Math.floor(Math.random() * validAdv.length)];
+        board[ar][ac] = { type: 'a', color: 'black' };
+      }
+    } else if (stage === 'Level 5') {
+      placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
+      placePiece('red', 'h', 0, 6, 0, 8, (r, c) => board[r][c] === null);
+    } else if (stage === 'Level 6') {
+      placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
+      placePiece('red', 'c', 0, 9, 0, 8, (r, c) => board[r][c] === null);
+    } else if (stage === 'Level 7') {
+      placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
+      placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null);
+      placePiece('red', 'p', 0, 6, 0, 8, (r, c) => board[r][c] === null);
+      
+      const advPos = [[0,3], [0,5], [1,4], [2,3], [2,5]];
+      const validAdv = advPos.filter(([r, c]) => board[r][c] === null);
+      if (validAdv.length > 0) {
+        const [ar, ac] = validAdv[Math.floor(Math.random() * validAdv.length)];
+        board[ar][ac] = { type: 'a', color: 'black' };
+      }
+      const elePos = [[0,2], [0,6], [2,0], [2,4], [2,8], [4,2], [4,6]];
+      const validEle = elePos.filter(([r, c]) => board[r][c] === null);
+      if (validEle.length > 0) {
+        const [er, ec] = validEle[Math.floor(Math.random() * validEle.length)];
+        board[er][ec] = { type: 'e', color: 'black' };
+      }
+      placePiece('black', 'p', 3, 6, 0, 8, (r, c) => board[r][c] === null);
     }
-  } else if (stage === 'Level 5') {
-    placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-    placePiece('red', 'h', 0, 6, 0, 8, (r, c) => board[r][c] === null);
-  } else if (stage === 'Level 6') {
-    placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-    placePiece('red', 'c', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-  } else if (stage === 'Level 7') {
-    placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-    placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null);
-    placePiece('red', 'p', 0, 6, 0, 8, (r, c) => board[r][c] === null);
-    
-    const advPos = [[0,3], [0,5], [1,4], [2,3], [2,5]];
-    const validAdv = advPos.filter(([r, c]) => board[r][c] === null);
-    if (validAdv.length > 0) {
-      const [ar, ac] = validAdv[Math.floor(Math.random() * validAdv.length)];
-      board[ar][ac] = { type: 'a', color: 'black' };
-    }
-    const elePos = [[0,2], [0,6], [2,0], [2,4], [2,8], [4,2], [4,6]];
-    const validEle = elePos.filter(([r, c]) => board[r][c] === null);
-    if (validEle.length > 0) {
-      const [er, ec] = validEle[Math.floor(Math.random() * validEle.length)];
-      board[er][ec] = { type: 'e', color: 'black' };
-    }
-    placePiece('black', 'p', 3, 6, 0, 8, (r, c) => board[r][c] === null);
+    return board;
+  }
+
+  // Red (Agent) always has full pieces
+  const redPieces: {type: PieceType, r: number, c: number}[] = [
+    {type: 'r', r: 9, c: 0}, {type: 'h', r: 9, c: 1}, {type: 'e', r: 9, c: 2}, {type: 'a', r: 9, c: 3}, {type: 'k', r: 9, c: 4}, {type: 'a', r: 9, c: 5}, {type: 'e', r: 9, c: 6}, {type: 'h', r: 9, c: 7}, {type: 'r', r: 9, c: 8},
+    {type: 'c', r: 7, c: 1}, {type: 'c', r: 7, c: 7},
+    {type: 'p', r: 6, c: 0}, {type: 'p', r: 6, c: 2}, {type: 'p', r: 6, c: 4}, {type: 'p', r: 6, c: 6}, {type: 'p', r: 6, c: 8}
+  ];
+  redPieces.forEach(p => board[p.r][p.c] = { type: p.type, color: 'red' });
+
+  // Black (Opponent) pieces depend on sub-level
+  if (stage === 'Chess King') {
+    const blackPieces: {type: PieceType, r: number, c: number}[] = [
+      {type: 'r', r: 0, c: 0}, {type: 'h', r: 0, c: 1}, {type: 'e', r: 0, c: 2}, {type: 'a', r: 0, c: 3}, {type: 'k', r: 0, c: 4}, {type: 'a', r: 0, c: 5}, {type: 'e', r: 0, c: 6}, {type: 'h', r: 0, c: 7}, {type: 'r', r: 0, c: 8},
+      {type: 'c', r: 2, c: 1}, {type: 'c', r: 2, c: 7},
+      {type: 'p', r: 3, c: 0}, {type: 'p', r: 3, c: 2}, {type: 'p', r: 3, c: 4}, {type: 'p', r: 3, c: 6}, {type: 'p', r: 3, c: 8}
+    ];
+    blackPieces.forEach(p => board[p.r][p.c] = { type: p.type, color: 'black' });
+    return board;
+  }
+
+  const subLevel = parseInt(stage.split(' ')[1]) as SubLevel;
+  
+  // Base pieces (King + 2 Advisors)
+  board[0][4] = { type: 'k', color: 'black' };
+  board[0][3] = { type: 'a', color: 'black' };
+  board[0][5] = { type: 'a', color: 'black' };
+
+  if (subLevel >= 2) {
+    board[0][2] = { type: 'e', color: 'black' };
+    board[0][6] = { type: 'e', color: 'black' };
+  }
+  if (subLevel >= 3) {
+    board[3][0] = {type: 'p', color: 'black'};
+    board[3][2] = {type: 'p', color: 'black'};
+    board[3][4] = {type: 'p', color: 'black'};
+    board[3][6] = {type: 'p', color: 'black'};
+    board[3][8] = {type: 'p', color: 'black'};
+  }
+  if (subLevel >= 4) {
+    board[0][1] = { type: 'h', color: 'black' };
+    board[0][7] = { type: 'h', color: 'black' };
+  }
+  if (subLevel >= 5) {
+    board[2][1] = { type: 'c', color: 'black' };
+    board[2][7] = { type: 'c', color: 'black' };
+  }
+  if (subLevel >= 6) {
+    board[0][0] = { type: 'r', color: 'black' };
+    board[0][8] = { type: 'r', color: 'black' };
   }
 
   return board;
@@ -136,6 +190,7 @@ export default function TrainingArena() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const consecutiveMaxStepsRef = useRef(0);
   const consecutiveRepetitionsRef = useRef(0);
+  const level7HalfWinCountRef = useRef(0);
 
   useEffect(() => {
     agentRef.current = new XiangqiRL();
@@ -205,7 +260,7 @@ export default function TrainingArena() {
         if (!hasLegalMoves(stateAfterAgent, opponentColor)) {
           gameOver = true;
           winner = agentColor;
-          stepReward += 1.0 + ((MAX_STEPS - stepCount) / 100); // 速勝獎勵
+          stepReward += 3.0 + ((MAX_STEPS - stepCount) / 100) * 3; // 速勝獎勵
           replayBufferRef.current.add({ state: currentBoard, reward: stepReward, nextState: stateAfterAgent, done: true });
           addLog(`Episode ${currentEpisode}: Agent wins by checkmate at step ${stepCount}`);
           currentBoard = stateAfterAgent;
@@ -214,7 +269,7 @@ export default function TrainingArena() {
 
         // --- Opponent's Turn ---
         let opponentMove;
-        if (stageRef.current === 'Dummy') {
+        if (stageRef.current.startsWith('Dummy')) {
           if (!fastMode) await new Promise(r => setTimeout(r, 10));
           opponentMove = getDummyMove(stateAfterAgent, opponentColor);
         } else if (stageRef.current === 'Chess King') {
@@ -228,7 +283,7 @@ export default function TrainingArena() {
         if (!opponentMove) {
           gameOver = true;
           winner = agentColor;
-          stepReward += 1.0 + ((MAX_STEPS - stepCount) / 100);
+          stepReward += 3.0 + ((MAX_STEPS - stepCount) / 100) * 3;
           replayBufferRef.current.add({ state: currentBoard, reward: stepReward, nextState: stateAfterAgent, done: true });
           addLog(`Episode ${currentEpisode}: Agent wins (Opponent no moves) at step ${stepCount}`);
           currentBoard = stateAfterAgent;
@@ -305,14 +360,29 @@ export default function TrainingArena() {
 
       currentEpsilon = Math.max(0.01, currentEpsilon * 0.995); // Normal decay
       
-      const isEndgame = stageRef.current.startsWith('Level');
+      if (result === 'draw') {
+        currentEpsilon = Math.min(0.1, currentEpsilon + 0.01);
+      }
+      
+      const isEndgame = stageRef.current.includes('1') || stageRef.current.includes('2');
       const repRestart = isEndgame ? 0.30 : 0.05;
       const maxStepRestart = isEndgame ? 0.50 : 0.05;
 
       if (consecutiveRepetitionsRef.current >= 3) {
         currentEpsilon = Math.max(currentEpsilon, repRestart);
         consecutiveRepetitionsRef.current = 0;
-        addLog(`🔄 Minor Epsilon Restart (${repRestart.toFixed(2)}) due to repetitions!`);
+        
+        // Add penalty for repetitions to discourage looping
+        for (let i = 0; i < 5; i++) {
+          replayBufferRef.current.add({ 
+            state: currentBoard, 
+            reward: -0.5, 
+            nextState: currentBoard, 
+            done: true 
+          });
+        }
+        
+        addLog(`🔄 Minor Epsilon Restart (${repRestart.toFixed(2)}) due to repetitions! 給予 -0.5 懲罰`);
       } else if (consecutiveMaxStepsRef.current >= 5) {
         currentEpsilon = Math.max(currentEpsilon, maxStepRestart);
         consecutiveMaxStepsRef.current = 0;
@@ -330,29 +400,78 @@ export default function TrainingArena() {
       }
 
       // Update recent results
-      const newResults = [...resultsRef.current, result].slice(-10);
+      const newResults = [...resultsRef.current, result].slice(-100);
       resultsRef.current = newResults;
       setRecentResults(newResults);
 
       // Check for stage advancement or desperation restart
-      if (newResults.length === 10) {
+      if (newResults.length === 100) {
         const wins = newResults.filter(r => r === 'win').length;
-        const requiredWins = stageRef.current === 'Level 7' ? 6 : 8;
+        const losses = newResults.filter(r => r === 'loss').length;
+        const draws = newResults.filter(r => r === 'draw').length;
+        const nonWins = losses + draws;
         
-        if (wins >= requiredWins) {
+        let shouldAdvance = false;
+        let shouldResetResults = false;
+
+        if (stageRef.current === 'Level 7') {
+          if (wins >= 55 && losses < 20) {
+            level7HalfWinCountRef.current += 1;
+            shouldResetResults = true;
+            if (level7HalfWinCountRef.current >= 2) {
+              shouldAdvance = true;
+            } else {
+              addLog(`⭐ Level 7 達成 55% 勝率且敗場低於 20%！(累計 ${level7HalfWinCountRef.current}/2 次)`);
+            }
+          }
+        } else {
+          if (wins >= 65 && losses < 20) {
+            shouldAdvance = true;
+          }
+        }
+        
+        if (shouldAdvance) {
           const nextStage = NEXT_STAGE[stageRef.current];
           if (nextStage) {
             const previousStage = stageRef.current;
             stageRef.current = nextStage;
             setStage(nextStage);
-            resultsRef.current = []; // Reset results for new stage
-            addLog(`🎉 恭喜！模型在 ${previousStage} 難度達成 10 戰 ${wins} 勝，晉級至 ${nextStage}！`);
+            shouldResetResults = true;
+            if (previousStage === 'Level 7') {
+              level7HalfWinCountRef.current = 0;
+              addLog(`🎉 恭喜！模型在 ${previousStage} 難度累計兩次 55% 勝率且敗場低於 20%，晉級至 ${nextStage}！`);
+            } else {
+              addLog(`🎉 恭喜！模型在 ${previousStage} 難度達成 100 戰 ${wins} 勝且敗場低於 20%，晉級至 ${nextStage}！`);
+            }
           }
-        } else if (wins === 0 && !isEndgame) {
-          // Desperation restart for full games if stuck at 0% win rate
-          currentEpsilon = Math.max(currentEpsilon, 0.25);
-          resultsRef.current = []; // Reset to give it a fresh 10 games
-          addLog(`⚠️ 勝率 0% 觸發破釜沉舟重置！探索率拉高至 0.25`);
+        } else if (nonWins > 70 && !isEndgame) {
+          // Desperation restart for full games if stuck
+          currentEpsilon = Math.max(currentEpsilon, 0.2);
+          shouldResetResults = true;
+          
+          // Add extra penalty to replay buffer to discourage current policy
+          for (let i = 0; i < 10; i++) {
+            replayBufferRef.current.add({ 
+              state: currentBoard, 
+              reward: -1.0, 
+              nextState: currentBoard, 
+              done: true 
+            });
+          }
+          
+          const prevStage = PREV_STAGE[stageRef.current];
+          if (prevStage && !prevStage.startsWith('Level')) {
+            stageRef.current = prevStage;
+            setStage(prevStage);
+            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟！探索率拉高至 0.2，給予 -1.0 懲罰並降級至 ${prevStage}！`);
+          } else {
+            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟重置！探索率拉高至 0.2，並給予 -1.0 懲罰`);
+          }
+        }
+
+        if (shouldResetResults) {
+          resultsRef.current = [];
+          setRecentResults([]);
         }
       }
 
@@ -393,8 +512,8 @@ export default function TrainingArena() {
       return;
     }
 
-    const jsonFile = Array.from(files).find(f => f.name.endsWith('.json'));
-    const binFile = Array.from(files).find(f => f.name.endsWith('.bin'));
+    const jsonFile = (Array.from(files) as File[]).find(f => f.name.endsWith('.json'));
+    const binFile = (Array.from(files) as File[]).find(f => f.name.endsWith('.bin'));
 
     if (!jsonFile || !binFile) {
       alert('必須包含一個 .json 檔案和一個 .bin 檔案');
@@ -431,26 +550,19 @@ export default function TrainingArena() {
         
         <div className="bg-white p-4 rounded-lg shadow-md mb-4 flex flex-col gap-4">
           
-          {/* Stage Indicator */}
-          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ 
-              width: `${(['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'Level 6', 'Level 7', 'Dummy', 'Easy', 'Medium', 'Hard', 'Hell', 'Chess King'].indexOf(stage) / 12) * 100}%` 
-            }}></div>
-          </div>
-          <div className="flex justify-between text-xs text-gray-500 font-bold px-1 flex-wrap gap-1">
-            <span className={stage === 'Level 1' ? 'text-blue-600' : ''}>L1 單車</span>
-            <span className={stage === 'Level 2' ? 'text-blue-600' : ''}>L2 雙車</span>
-            <span className={stage === 'Level 3' ? 'text-blue-600' : ''}>L3 車兵</span>
-            <span className={stage === 'Level 4' ? 'text-blue-600' : ''}>L4 車兵士</span>
-            <span className={stage === 'Level 5' ? 'text-blue-600' : ''}>L5 車馬</span>
-            <span className={stage === 'Level 6' ? 'text-blue-600' : ''}>L6 車炮</span>
-            <span className={stage === 'Level 7' ? 'text-blue-600' : ''}>L7 殲滅</span>
-            <span className={stage === 'Dummy' ? 'text-blue-600' : ''}>沙包</span>
-            <span className={stage === 'Easy' ? 'text-blue-600' : ''}>簡單</span>
-            <span className={stage === 'Medium' ? 'text-blue-600' : ''}>中等</span>
-            <span className={stage === 'Hard' ? 'text-blue-600' : ''}>困難</span>
-            <span className={stage === 'Hell' ? 'text-blue-600' : ''}>地獄</span>
-            <span className={stage === 'Chess King' ? 'text-purple-600' : ''}>👑 棋王</span>
+          {/* Stage Display */}
+          <div className="flex flex-col items-center justify-center py-2">
+            <div className="text-sm text-gray-500 font-bold uppercase tracking-wider mb-1">當前訓練階段</div>
+            <div className="text-3xl font-black text-blue-600 flex items-center gap-2">
+              {stage.startsWith('Level') && <span className="text-blue-500">{stage}</span>}
+              {stage.includes('Dummy') && <span className="text-gray-400">沙包</span>}
+              {stage.includes('Easy') && <span className="text-green-500">簡單</span>}
+              {stage.includes('Medium') && <span className="text-yellow-500">中等</span>}
+              {stage.includes('Hard') && <span className="text-orange-500">困難</span>}
+              {stage.includes('Hell') && <span className="text-red-600">地獄</span>}
+              {stage === 'Chess King' && <span className="text-purple-600">👑 棋王</span>}
+              {!stage.startsWith('Level') && stage !== 'Chess King' && <span>{stage.split(' ')[1]}</span>}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4 text-center mt-2">

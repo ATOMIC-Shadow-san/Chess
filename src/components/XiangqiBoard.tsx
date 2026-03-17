@@ -45,7 +45,7 @@ export default function XiangqiBoard({ mode, initialBoard, aiDifficulty = 'mediu
   // Initialize Socket for Online Mode
   useEffect(() => {
     if (mode === 'online' && targetRoomId) {
-      const newSocket = io(import.meta.env.VITE_APP_URL || window.location.origin);
+      const newSocket = io((import.meta as any).env.VITE_APP_URL || window.location.origin);
       setSocket(newSocket);
 
       newSocket.emit('join_room', targetRoomId);

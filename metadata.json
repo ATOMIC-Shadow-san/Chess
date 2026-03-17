@@ -1,5 +1,5 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Xiangqi RL Master",
+  "description": "A full-stack Xiangqi (Chinese Chess) application featuring a Curriculum Reinforcement Learning training arena, AI opponents, and real-time multiplayer.",
   "requestFramePermissions": []
 }
