@@ -457,12 +457,23 @@ export default function TrainingArena() {
             consecutiveDesperationRef.current = 1;
           }
           
-          // 0.2, 0.28, 0.36, 0.44, 0.52 (capped at 0.6)
-          let newEpsilon = 0.2 + (consecutiveDesperationRef.current - 1) * 0.08;
-          newEpsilon = Math.min(newEpsilon, 0.6);
+          let targetEpsilon;
+          if (consecutiveDesperationRef.current === 1) {
+            targetEpsilon = 0.15;
+          } else if (consecutiveDesperationRef.current >= 15) {
+            targetEpsilon = 0;
+            consecutiveDesperationRef.current = 0; // Reset counter
+          } else {
+            targetEpsilon = 0.2 + (consecutiveDesperationRef.current - 2) * 0.02;
+            targetEpsilon = Math.min(targetEpsilon, 0.4);
+          }
           
           // Desperation restart for full games if stuck
-          currentEpsilon = Math.max(currentEpsilon, newEpsilon);
+          if (targetEpsilon === 0) {
+            currentEpsilon = 0;
+          } else if (currentEpsilon < targetEpsilon) {
+            currentEpsilon = targetEpsilon;
+          }
           shouldResetResults = true;
           
           // Add extra penalty to replay buffer to discourage current policy
@@ -476,13 +487,13 @@ export default function TrainingArena() {
           }
           
           const prevStage = PREV_STAGE[stageRef.current];
-          const logEpsilon = newEpsilon.toFixed(2);
+          const logEpsilon = targetEpsilon.toFixed(2);
           if (prevStage && !prevStage.startsWith('Level')) {
             stageRef.current = prevStage;
             setStage(prevStage);
-            addLog(`⚠️ 敗場(含合棋)高於 29/50 觸發破釜沉舟！探索率拉高至 ${logEpsilon}，給予 -1.0 懲罰並降級至 ${prevStage}！`);
+            addLog(`⚠️ 敗場(含合棋)高於 29/50 觸發破釜沉舟！探索率調整為 ${logEpsilon}，給予 -1.0 懲罰並降級至 ${prevStage}！`);
           } else {
-            addLog(`⚠️ 敗場(含合棋)高於 29/50 觸發破釜沉舟重置！探索率拉高至 ${logEpsilon}，並給予 -1.0 懲罰`);
+            addLog(`⚠️ 敗場(含合棋)高於 29/50 觸發破釜沉舟重置！探索率調整為 ${logEpsilon}，並給予 -1.0 懲罰`);
           }
         } else {
           if (isExactly50th) {
