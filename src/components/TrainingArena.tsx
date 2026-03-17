@@ -448,7 +448,7 @@ export default function TrainingArena() {
           }
         } else if (nonWins > 70 && !isEndgame) {
           // Desperation restart for full games if stuck
-          currentEpsilon = Math.max(currentEpsilon, 0.2);
+          currentEpsilon = Math.max(currentEpsilon, 0.4);
           shouldResetResults = true;
           
           // Add extra penalty to replay buffer to discourage current policy
@@ -465,9 +465,9 @@ export default function TrainingArena() {
           if (prevStage && !prevStage.startsWith('Level')) {
             stageRef.current = prevStage;
             setStage(prevStage);
-            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟！探索率拉高至 0.2，給予 -1.0 懲罰並降級至 ${prevStage}！`);
+            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟！探索率拉高至 0.4，給予 -1.0 懲罰並降級至 ${prevStage}！`);
           } else {
-            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟重置！探索率拉高至 0.2，並給予 -1.0 懲罰`);
+            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟重置！探索率拉高至 0.4，並給予 -1.0 懲罰`);
           }
         }
 
