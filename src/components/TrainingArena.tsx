@@ -361,7 +361,9 @@ export default function TrainingArena() {
       currentEpsilon = Math.max(0.01, currentEpsilon * 0.995); // Normal decay
       
       if (result === 'draw') {
-        currentEpsilon = Math.min(0.1, currentEpsilon + 0.01);
+        if (currentEpsilon + 0.01 <= 0.1) {
+          currentEpsilon += 0.01;
+        }
       }
       
       const isEndgame = stageRef.current.includes('1') || stageRef.current.includes('2');
