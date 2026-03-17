@@ -97,23 +97,22 @@ const generateBoardForStage = (stage: TrainingStage): BoardState => {
       placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
       placePiece('red', 'c', 0, 9, 0, 8, (r, c) => board[r][c] === null);
     } else if (stage === 'Level 7') {
-      placePiece('red', 'r', 0, 9, 0, 8, (r, c) => board[r][c] === null);
-      placePiece('red', 'p', 0, 4, 0, 8, (r, c) => board[r][c] === null);
-      placePiece('red', 'p', 0, 6, 0, 8, (r, c) => board[r][c] === null);
-      
-      const advPos = [[0,3], [0,5], [1,4], [2,3], [2,5]];
-      const validAdv = advPos.filter(([r, c]) => board[r][c] === null);
-      if (validAdv.length > 0) {
-        const [ar, ac] = validAdv[Math.floor(Math.random() * validAdv.length)];
-        board[ar][ac] = { type: 'a', color: 'black' };
-      }
-      const elePos = [[0,2], [0,6], [2,0], [2,4], [2,8], [4,2], [4,6]];
-      const validEle = elePos.filter(([r, c]) => board[r][c] === null);
-      if (validEle.length > 0) {
-        const [er, ec] = validEle[Math.floor(Math.random() * validEle.length)];
-        board[er][ec] = { type: 'e', color: 'black' };
-      }
-      placePiece('black', 'p', 3, 6, 0, 8, (r, c) => board[r][c] === null);
+      // Red: 帥+2馬+1車(左)+1士(左)+1兵(左1)
+      // Board is 10x9. Red is at bottom (rows 7-9), Black at top (rows 0-2).
+      // Red pieces (bottom):
+      board[9][4] = { type: 'k', color: 'red' }; // 帥
+      board[9][1] = { type: 'h', color: 'red' }; // 馬
+      board[9][7] = { type: 'h', color: 'red' }; // 馬
+      board[9][0] = { type: 'r', color: 'red' }; // 車 (左)
+      board[9][3] = { type: 'a', color: 'red' }; // 士 (左)
+      board[6][0] = { type: 'p', color: 'red' }; // 兵 (左1)
+
+      // Black: 將+1車+1卒(中間未過河)+1士
+      // Black pieces (top):
+      board[0][4] = { type: 'k', color: 'black' }; // 將
+      board[0][0] = { type: 'r', color: 'black' }; // 車
+      board[3][4] = { type: 'p', color: 'black' }; // 卒 (中間未過河)
+      board[0][3] = { type: 'a', color: 'black' }; // 士
     }
     return board;
   }
@@ -419,15 +418,9 @@ export default function TrainingArena() {
         let shouldResetResults = false;
 
         if (stageRef.current === 'Level 7') {
-          if (wins >= 23 && losses < 12) {
-            level7HalfWinCountRef.current += 1;
-            shouldResetResults = true;
+          if (wins >= 28 && losses < 15) {
+            shouldAdvance = true;
             consecutiveDesperationRef.current = 0;
-            if (level7HalfWinCountRef.current >= 2) {
-              shouldAdvance = true;
-            } else {
-              addLog(`⭐ Level 7 達成 46% 勝率且敗場低於 12/50！(累計 ${level7HalfWinCountRef.current}/2 次)`);
-            }
           }
         } else {
           if (wins >= 28 && losses < 15) {
@@ -443,12 +436,7 @@ export default function TrainingArena() {
             stageRef.current = nextStage;
             setStage(nextStage);
             shouldResetResults = true;
-            if (previousStage === 'Level 7') {
-              level7HalfWinCountRef.current = 0;
-              addLog(`🎉 恭喜！模型在 ${previousStage} 難度累計兩次 46% 勝率且敗場低於 12/50，晉級至 ${nextStage}！`);
-            } else {
-              addLog(`🎉 恭喜！模型在 ${previousStage} 難度達成 50 戰 ${wins} 勝且敗場低於 15/50，晉級至 ${nextStage}！`);
-            }
+            addLog(`🎉 恭喜！模型在 ${previousStage} 難度達成 50 戰 ${wins} 勝且敗場低於 15/50，晉級至 ${nextStage}！`);
           }
         } else if (nonWins > 29 && !isEndgame) {
           if (isExactly50th) {
