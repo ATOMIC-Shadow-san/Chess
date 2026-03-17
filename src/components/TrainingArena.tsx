@@ -403,13 +403,13 @@ export default function TrainingArena() {
       }
 
       // Update recent results
-      const isExactly100th = resultsRef.current.length === 99;
-      const newResults = [...resultsRef.current, result].slice(-100);
+      const isExactly50th = resultsRef.current.length === 49;
+      const newResults = [...resultsRef.current, result].slice(-50);
       resultsRef.current = newResults;
       setRecentResults(newResults);
 
       // Check for stage advancement or desperation restart
-      if (newResults.length === 100) {
+      if (newResults.length === 50) {
         const wins = newResults.filter(r => r === 'win').length;
         const losses = newResults.filter(r => r === 'loss').length;
         const draws = newResults.filter(r => r === 'draw').length;
@@ -419,18 +419,18 @@ export default function TrainingArena() {
         let shouldResetResults = false;
 
         if (stageRef.current === 'Level 7') {
-          if (wins >= 55 && losses < 20) {
+          if (wins >= 23 && losses < 12) {
             level7HalfWinCountRef.current += 1;
             shouldResetResults = true;
             consecutiveDesperationRef.current = 0;
             if (level7HalfWinCountRef.current >= 2) {
               shouldAdvance = true;
             } else {
-              addLog(`⭐ Level 7 達成 55% 勝率且敗場低於 20%！(累計 ${level7HalfWinCountRef.current}/2 次)`);
+              addLog(`⭐ Level 7 達成 46% 勝率且敗場低於 12/50！(累計 ${level7HalfWinCountRef.current}/2 次)`);
             }
           }
         } else {
-          if (wins >= 65 && losses < 20) {
+          if (wins >= 28 && losses < 15) {
             shouldAdvance = true;
             consecutiveDesperationRef.current = 0;
           }
@@ -445,20 +445,21 @@ export default function TrainingArena() {
             shouldResetResults = true;
             if (previousStage === 'Level 7') {
               level7HalfWinCountRef.current = 0;
-              addLog(`🎉 恭喜！模型在 ${previousStage} 難度累計兩次 55% 勝率且敗場低於 20%，晉級至 ${nextStage}！`);
+              addLog(`🎉 恭喜！模型在 ${previousStage} 難度累計兩次 46% 勝率且敗場低於 12/50，晉級至 ${nextStage}！`);
             } else {
-              addLog(`🎉 恭喜！模型在 ${previousStage} 難度達成 100 戰 ${wins} 勝且敗場低於 20%，晉級至 ${nextStage}！`);
+              addLog(`🎉 恭喜！模型在 ${previousStage} 難度達成 50 戰 ${wins} 勝且敗場低於 15/50，晉級至 ${nextStage}！`);
             }
           }
-        } else if (nonWins > 70 && !isEndgame) {
-          if (isExactly100th) {
+        } else if (nonWins > 29 && !isEndgame) {
+          if (isExactly50th) {
             consecutiveDesperationRef.current += 1;
           } else {
             consecutiveDesperationRef.current = 1;
           }
           
-          let newEpsilon = 0.3 + (consecutiveDesperationRef.current - 1) * 0.1;
-          newEpsilon = Math.min(newEpsilon, 0.7);
+          // 0.2, 0.28, 0.36, 0.44, 0.52 (capped at 0.6)
+          let newEpsilon = 0.2 + (consecutiveDesperationRef.current - 1) * 0.08;
+          newEpsilon = Math.min(newEpsilon, 0.6);
           
           // Desperation restart for full games if stuck
           currentEpsilon = Math.max(currentEpsilon, newEpsilon);
@@ -475,16 +476,16 @@ export default function TrainingArena() {
           }
           
           const prevStage = PREV_STAGE[stageRef.current];
-          const logEpsilon = newEpsilon.toFixed(1);
+          const logEpsilon = newEpsilon.toFixed(2);
           if (prevStage && !prevStage.startsWith('Level')) {
             stageRef.current = prevStage;
             setStage(prevStage);
-            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟！探索率拉高至 ${logEpsilon}，給予 -1.0 懲罰並降級至 ${prevStage}！`);
+            addLog(`⚠️ 敗場(含合棋)高於 29/50 觸發破釜沉舟！探索率拉高至 ${logEpsilon}，給予 -1.0 懲罰並降級至 ${prevStage}！`);
           } else {
-            addLog(`⚠️ 敗場(含合棋)高於 70% 觸發破釜沉舟重置！探索率拉高至 ${logEpsilon}，並給予 -1.0 懲罰`);
+            addLog(`⚠️ 敗場(含合棋)高於 29/50 觸發破釜沉舟重置！探索率拉高至 ${logEpsilon}，並給予 -1.0 懲罰`);
           }
         } else {
-          if (isExactly100th) {
+          if (isExactly50th) {
             consecutiveDesperationRef.current = 0;
           }
         }
